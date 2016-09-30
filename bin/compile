@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+require "yaml"
+require "pathname"
+
+class CustomBinaries
+  attr_reader :install_dir, :manifest_path, :profile_path, :manifest
+
+  def initialize(build_dir)
+    @build_dir     = Pathname(build_dir)
+    @install_dir   = @build_dir.join("custom_bin")
+    @manifest_path = @build_dir.join(".custom_binaries")
+    @profile_path  = @build_dir.join(".profile.d/custom_binaries.sh")
+    @manifest = YAML.load_file(@manifest_path) || {}
+  end
+
+  def run
+    check_manifest_presence
+    ensure_install_dir
+    install_manifest
+    create_profile_script
+    puts
+  end
+
+  def check_manifest_presence
+    if manifest.empty?
+      puts "-----> #{ manifest_path } manifest is empty. Skipping."
+      exit 0
+    else
+      puts "-----> Found #{ manifest_path } manifest"
+    end
+  end
+
+  def ensure_install_dir
+    if install_dir.exist?
+      puts "-----> Found #{ install_dir } directory"
+    else
+      install_dir.mkdir
+      puts "-----> Created #{ install_dir } directory"
+    end
+  end
+
+  def install_manifest
+    puts "-----> Installing custom binaries manifest"
+
+    processes = {}
+
+    trap("CHLD") do
+      while processes.any? && pid = Process.waitpid(-1, Process::WNOHANG)
+        bin_name = processes.delete(pid)
+        puts "       ...#{ bin_name } added to #{ install_dir }"
+      end
+    end
+
+    manifest.each do |bin_name, url|
+      pid = Process.spawn(
+        "curl -L --silent #{ url } | " \
+        "tar x -z -C #{ @install_dir } --transform=s/.*/#{ bin_name }/"
+      )
+      processes[pid] = bin_name
+      puts "       Downloading and Extracting #{ bin_name } from #{ url }..."
+    end
+
+    sleep 0.1 while processes.any?
+  end
+
+  def create_profile_script
+    profile_path.parent.mkpath
+    File.open(profile_path, "w") do |file|
+      file.puts "# add custom binaries to the path"
+      file.puts "export PATH=$PATH:$HOME/#{ install_dir.basename }"
+    end
+    puts "-----> Created profile.d Script at #{ profile_path }"
+  end
+end
+
+CustomBinaries.new(ARGV[0]).run
