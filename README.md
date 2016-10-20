@@ -72,5 +72,5 @@ Build a gzipped tarball bundle of the resulting binary:
 tar -cvzf archive-name.tar.gz binary-to-compress
 ```
 
-Then your make it available to via URL through Amazon S3 or your favorite online
+Then make it available to via URL through Amazon S3 or your favorite online
 file storage.
